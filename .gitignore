@@ -1,0 +1,34 @@
+# Secrets & credentials — never commit
+*.vault
+*.key
+secrets/
+credentials*.txt
+credentials*.csv
+scripts/files/elastic-config.json
+
+# Lab state (GOAD workspace, snapshots manifests, VM artifacts)
+workspace/
+*.box
+*.vdi
+*.vmdk
+*.ova
+*.ovf
+
+# Script runtime artifacts (backups/logs created on hosts)
+backups/
+*.log
+*.evtx
+*.sdb
+*.bak
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.zcode/
+
+# Large elastic binaries - fetched by scripts/download-tools.ps1 from GitHub Releases
+tools/elastic/win/elasticsearch-*.zip
+tools/elastic/win/kibana-*.zip
+tools/elastic/elastic-agent-*.zip

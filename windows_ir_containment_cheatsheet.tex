@@ -1,0 +1,241 @@
+\documentclass[10pt]{article}
+\usepackage[margin=0.5in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{xcolor}
+\usepackage{tcolorbox}
+\usepackage{enumitem}
+
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+
+\definecolor{headerbg}{HTML}{111111}
+\definecolor{panelbg}{HTML}{F4F4F4}
+\definecolor{textmain}{HTML}{101010}
+
+% Monospace command text that can wrap across lines.
+\newcommand{\cmd}[1]{\texttt{\detokenize{#1}}}
+
+\tcbset{
+  colback=panelbg,
+  colframe=headerbg,
+  coltitle=white,
+  colbacktitle=headerbg,
+  fonttitle=\bfseries,
+  boxrule=0.8pt,
+  arc=0pt,
+  outer arc=0pt,
+  left=6pt,
+  right=6pt,
+  top=6pt,
+  bottom=6pt
+}
+
+\begin{document}
+\color{textmain}
+
+\begin{center}
+  {\Large \textbf{Red vs Blue Windows IR / Containment Cheat Sheet}}\\
+  \small v0.5 (PowerShell Only)
+\end{center}
+
+\begin{tcolorbox}[title=Kill Suspicious Process]
+\begin{itemize}[leftmargin=1.1em, itemsep=1pt, topsep=2pt]
+  \item By PID: \verb!Stop-Process -Id <PID> -Force!
+  \item By name: \verb!Stop-Process -Name <ProcessName> -Force!
+  \item Verify PID gone: \verb!Get-Process -Id <PID> -ErrorAction SilentlyContinue!
+  \item Verify name gone: \verb!Get-Process -Name <ProcessName> -ErrorAction SilentlyContinue!
+\end{itemize}
+\end{tcolorbox}
+
+\begin{tcolorbox}[title=Audit Processes + Persistence]
+\begin{itemize}[leftmargin=1.1em, itemsep=1pt, topsep=2pt]
+  \item Top CPU: \verb!Get-Process | Sort CPU -Desc | Select -First 20 Id,ProcessName,CPU!
+  \item Process owners: \verb!Get-Process -IncludeUserName | Select Id,ProcessName,UserName!
+  \item Parent/child view: \verb!Get-CimInstance Win32_Process | Select ProcessId,ParentProcessId,Name!
+  \item Startup entries: \verb!Get-CimInstance Win32_StartupCommand | Select Name,Command,Location,User!
+  \item Scheduled tasks: \verb!Get-ScheduledTask | ? State -ne 'Disabled' | Select TaskName,TaskPath,State!
+\end{itemize}
+\end{tcolorbox}
+
+\begin{tcolorbox}[title=Service Containment + Verification]
+\begin{itemize}[leftmargin=1.1em, itemsep=1pt, topsep=2pt]
+  \item List running services: \verb!Get-Service | ? Status -eq 'Running' | Select Name,DisplayName,Status!
+  \item Query by name: \verb!Get-Service -Name <ServiceName> -ErrorAction Stop!
+  \item Wildcard search: \verb!Get-Service -Name '*<Keyword>*'!
+  \item Stop service now: \verb!Stop-Service -Name <ServiceName> -Force -NoWait -PassThru!
+  \item Restart service: \verb!Restart-Service -Name <ServiceName> -Force -PassThru!
+  \item Start service: \verb!Start-Service -Name <ServiceName>!
+  \item Disable at boot: \verb!Set-Service -Name <ServiceName> -StartupType Disabled!
+  \item Set manual start: \verb!Set-Service -Name <ServiceName> -StartupType Manual!
+  \item Full service details: \verb!Get-CimInstance Win32_Service -Filter "Name='<ServiceName>'" | Select Name,State,StartMode,StartName,PathName,ProcessId!
+  \item Dependency checks: \verb!Get-Service -Name <ServiceName> -DependentServices! / \verb!Get-Service -Name <ServiceName> -RequiredServices!
+\end{itemize}
+\end{tcolorbox}
+
+\begin{tcolorbox}[title=Fast Host Isolation]
+\begin{itemize}[leftmargin=1.1em, itemsep=1pt, topsep=2pt]
+  \item Block inbound: \verb!Set-NetFirewallProfile -Profile Domain,Public,Private -DefaultInboundAction Block!
+  \item Block outbound: \verb!Set-NetFirewallProfile -Profile Domain,Public,Private -DefaultOutboundAction Block!
+  \item Add block rule (example): \verb!New-NetFirewallRule -DisplayName 'IR Block C2 203.0.113.10' -Direction Outbound -Action Block -RemoteAddress 203.0.113.10 -Protocol TCP!
+  \item Verify/rollback rule: \verb!Get-NetFirewallRule -DisplayName 'IR Block C2 203.0.113.10'! / \verb!Remove-NetFirewallRule -DisplayName 'IR Block C2 203.0.113.10'!
+  \item Disable active NICs: \verb!Get-NetAdapter | ? Status -eq 'Up' | Disable-NetAdapter -Confirm:$false!
+\end{itemize}
+\end{tcolorbox}
+
+\begin{tcolorbox}[title=Containment Rollback (Re-Enable)]
+\begin{itemize}[leftmargin=1.1em, itemsep=1pt, topsep=2pt]
+  \item Re-enable DNS recursion: \verb!Set-DnsServerRecursion -Enable $true!
+  \item Verify recursion state: \verb!Get-DnsServerRecursion | Select Enable!
+  \item Re-enable/clear machine PS lockdown override: \verb![System.Environment]::SetEnvironmentVariable("__PSLockdownPolicy", $null, "Machine")!
+\end{itemize}
+\end{tcolorbox}
+
+\begin{tcolorbox}[title=Current Ports In Use]
+\begin{itemize}[leftmargin=1.1em, itemsep=1pt, topsep=2pt]
+  \item TCP: \verb!Get-NetTCPConnection | Select LocalAddress,LocalPort,State,OwningProcess!
+  \item UDP: \verb!Get-NetUDPEndpoint | Select LocalAddress,LocalPort,OwningProcess!
+  \item Established: \verb!Get-NetTCPConnection -State Established | Select LocalPort,RemotePort,OwningProcess!
+  \item PID $\rightarrow$ Service: \verb!Get-CimInstance Win32_Service | ? ProcessId -eq <PID> | Select Name,State!
+  \item PID $\rightarrow$ Process: \verb!Get-Process -Id <PID>!
+\end{itemize}
+\end{tcolorbox}
+
+\begin{tcolorbox}[title=AD Users (Create / Remove / Query)]
+\begin{itemize}[leftmargin=1.1em, itemsep=1pt, topsep=2pt]
+  \item Module: \verb!Import-Module ActiveDirectory!
+  \item List users: \verb!Get-ADUser -Filter * | Select Name,SamAccountName!
+  \item Query user: \verb!Get-ADUser -Identity <SamAccountName> -Properties *!
+  \item Create user: \verb!New-ADUser -Name <Name> -SamAccountName <SamAccountName>!
+  \item Remove user: \verb!Remove-ADUser -Identity <SamAccountName> -Confirm:$false!
+\end{itemize}
+\end{tcolorbox}
+
+\begin{tcolorbox}[title=User Changes (net user / net localgroup)]
+\begin{itemize}[leftmargin=1.1em, itemsep=1pt, topsep=2pt]
+  \item List local users: \verb!net user!
+  \item Show user details: \verb!net user <username>!
+  \item Change password: \verb!net user <username> *!
+  \item Disable / enable user: \verb!net user <username> /active:no! / \verb!net user <username> /active:yes!
+  \item Add / remove local user: \verb!net user <username> <Password> /add! / \verb!net user <username> /delete!
+  \item Add / remove local admin: \verb!net localgroup Administrators <username> /add! / \verb!net localgroup Administrators <username> /delete!
+  \item Domain account change (from domain-joined host): \verb!net user <username> * /domain!
+\end{itemize}
+\end{tcolorbox}
+
+\begin{tcolorbox}[title=Event Viewer Flow (LDAP / AD Services)]
+\begin{enumerate}[leftmargin=1.2em, itemsep=1pt, topsep=2pt]
+  \item Open Event Viewer: \verb!eventvwr.msc!
+  \item Review these logs:
+    \verb!Windows Logs > Security! ;
+    \verb!Applications and Services Logs > Directory Service! ;
+    \verb!Applications and Services Logs > Active Directory Web Services!
+  \item In each log, click \textit{Filter Current Log...}; set \textit{Logged} to last 1--4 hours and use Event IDs from the table below.
+  \item Sort by \textit{Date and Time} (newest first), then inspect suspicious events for account, source host/IP, service, and object DN.
+  \item Pivot with \textit{Find...} using username/computer/IP/service account to connect activity across logs.
+  \item Preserve evidence: \textit{Save Filtered Log File As} \verb!.evtx! and export/copy details into case notes.
+\end{enumerate}
+\end{tcolorbox}
+
+\begin{tcolorbox}[title=Important Event IDs (LDAP / AD Services)]
+\footnotesize
+\begin{tabular}{|p{0.6in}|p{1.2in}|p{4.9in}|}
+\hline
+\textbf{Event ID} & \textbf{Log} & \textbf{What it tells you} \\ \hline
+2886 & Directory Service & Domain controller is not enforcing LDAP signing policy (hardening gap). \\ \hline
+2887 & Directory Service & Count of LDAP simple binds / unsigned binds in interval. \\ \hline
+2888 & Directory Service & Unsigned/simple LDAP binds were rejected (policy enforcement impact). \\ \hline
+2889 & Directory Service & Client details for insecure LDAP bind attempts (source tracing). \\ \hline
+4624 & Security & Successful logon (track account, logon type, source workstation/IP). \\ \hline
+4625 & Security & Failed logon attempt (password spray/brute force signal). \\ \hline
+4768 & Security & Kerberos TGT request (initial Kerberos auth activity). \\ \hline
+4769 & Security & Kerberos service ticket request (service access patterning). \\ \hline
+4771 & Security & Kerberos pre-authentication failed (bad creds/time skew/attack). \\ \hline
+4776 & Security & NTLM authentication validation (legacy auth and DC validation events). \\ \hline
+4740 & Security & Account lockout triggered. \\ \hline
+4728 / 4732 / 4756 & Security & Member added to privileged group (global / local / universal). \\ \hline
+4729 / 4733 / 4757 & Security & Member removed from group (check for cleanup or tampering). \\ \hline
+5136 / 5137 / 5139 / 5141 & Security & AD object modified / created / moved / deleted. \\ \hline
+\end{tabular}
+\normalsize
+\end{tcolorbox}
+
+\begin{tcolorbox}[title=Hunt Recent EXE Files (PowerShell)]
+\begin{itemize}[leftmargin=1.1em, itemsep=1pt, topsep=2pt]
+  \item Set scope: \verb!$r=$env:USERPROFILE!
+  \item Cache EXE list: \verb!$e=Get-ChildItem $r -Recurse -Force -Filter *.exe -EA 0!
+  \item EXE + full path: \verb!$e | Select Name,FullName!
+  \item EXE created (1d): \verb!$e | ? CreationTime -gt (Get-Date).AddDays(-1) | Select FullName,CreationTime!
+  \item EXE modified (1d): \verb!$e | ? LastWriteTime -gt (Get-Date).AddDays(-1) | Select FullName,LastWriteTime!
+  \item Modified (10d): \verb!$e | ? LastWriteTime -gt (Get-Date).AddDays(-10) | Select FullName,LastWriteTime!
+  \item EXE smaller than 6MB: \verb!$e | ? Length -lt 6MB | Select FullName,Length!
+\end{itemize}
+\end{tcolorbox}
+
+\begin{tcolorbox}[title=Microsoft Security Compliance Toolkit (SCT) Flows]
+\begin{enumerate}[leftmargin=1.2em, itemsep=1pt, topsep=2pt]
+  \item Baseline compare (Policy Analyzer): Download SCT from Microsoft Download Center (ID 55319), extract \verb!PolicyAnalyzer.zip!, load Microsoft baseline \verb!*.PolicyRules! files plus your environment rules, then export differences to CSV for triage/change control.
+  \item Safe local apply (LGPO): Backup first with \verb!.\LGPO.exe /b C:\IR\LGPO-PreSCT!, then import baseline backup(s) with \verb!.\LGPO.exe /g "<BaselineGpoBackupRoot>"!.
+  \item Validate + enforce: \verb!gpupdate /force! ; \verb!gpresult /h C:\IR\gpresult_sct.html! ; spot-check critical settings/events before broad rollout.
+  \item Rollback flow: Re-import your backup with \verb!.\LGPO.exe /g C:\IR\LGPO-PreSCT! and rerun \verb!gpupdate /force! to return to pre-change local policy state.
+\end{enumerate}
+\end{tcolorbox}
+
+\begin{tcolorbox}[title=Sysinternals Quick Checks]
+\begin{itemize}[leftmargin=1.1em, itemsep=1pt, topsep=2pt]
+  \item Check who can control SCM: \verb!accesschk64.exe -uwcqv "Authenticated Users" scmanager!
+  \item Check who can control service: \verb!accesschk64.exe -ucqv Spooler!
+  \item Check write access to folder: \verb!accesschk64.exe -uwd "Domain Users" C:\Program Files\!
+  \item Check registry permissions: \verb!accesschk64.exe -uvw "Users" HKLM\Software!
+  \item Find services writable by non-admins: \verb!accesschk64.exe -uwcqv "Users" *!
+  \item Check signature and publisher: \verb!sigcheck64.exe C:\Windows\System32\svchost.exe!
+  \item Search strings for HTTP indicators: \verb!strings64.exe suspicious.exe | findstr http!
+\end{itemize}
+\end{tcolorbox}
+
+\begin{tcolorbox}[title=Sysinternals Threat-Hunt + Cleanup Playbooks]
+\footnotesize
+\begin{enumerate}[leftmargin=1.2em, itemsep=2pt, topsep=2pt]
+  \item \textbf{Autoruns64.exe} - Hunt: run \cmd{.\tools\sysinternals\Autoruns64.exe}, enable \textit{Options > Hide Microsoft Entries}, then review \textit{Logon}, \textit{Services}, \textit{Scheduled Tasks}, and \textit{WMI} for unknown, unsigned, or non-essential startup entries. Cleanup: uncheck first to disable, reboot and validate business impact, then delete confirmed malicious entries and remove backing files/tasks/services.
+  \item \textbf{procexp64.exe (Process Explorer)} - Hunt: run \cmd{.\tools\sysinternals\procexp64.exe}, sort by signer/company, inspect abnormal parent-child chains, and verify suspicious binaries with \textit{Check VirusTotal.com}. Cleanup: kill confirmed malicious process trees, then remove persistence (service/task/run key) tied to those PIDs.
+  \item \textbf{Procmon64.exe (Process Monitor)} - Hunt: run \cmd{.\tools\sysinternals\Procmon64.exe} with filters for \textit{RegSetValue}, \textit{CreateFile}, and \textit{Process Create} touching startup paths, task cache, services, WMI repo, and user temp directories. Cleanup: identify exact file/registry artifacts from events and delete/disable them in place.
+  \item \textbf{tcpview64.exe} - Hunt: run \cmd{.\tools\sysinternals\tcpview64.exe}, focus on unexpected established outbound sessions and frequent reconnect behavior to rare remote IPs/ports. Cleanup: terminate owning process from TCPView, then block destination IP/domain via firewall and remove related persistence.
+  \item \textbf{sigcheck64.exe} - Hunt: run \cmd{.\tools\sysinternals\sigcheck64.exe -u -e -vt C:\Windows\System32} and targeted scans on user-writable paths to find unsigned or reputation-poor binaries. Cleanup: quarantine/delete flagged binaries after path/process validation, then re-run sigcheck to confirm no remaining unsigned implants in scope.
+  \item \textbf{strings64.exe} - Hunt: run \cmd{.\tools\sysinternals\strings64.exe <suspect.exe> | findstr /i "http https cmd powershell rundll regsvr mshta pastebin token key"} to surface C2, LOLBIN, and credential artifacts. Cleanup: use extracted IOCs (domains, mutexes, paths) to block, search, and eradicate related components.
+  \item \textbf{streams64.exe} - Hunt: run \cmd{.\tools\sysinternals\streams64.exe -s C:\Users} (and other writable roots) to detect alternate data streams used for hidden payloads. Cleanup: remove malicious ADS with \cmd{streams64.exe -d <path>} and confirm parent file legitimacy before deleting host files.
+  \item \textbf{accesschk64.exe} - Hunt: run \cmd{.\tools\sysinternals\accesschk64.exe -uwcqv "Users" *} and targeted checks on services/registry/program directories to find writable privilege-escalation paths. Cleanup: tighten ACLs (remove broad write permissions), then retest with accesschk to verify exposure is closed.
+  \item \textbf{PsExec64.exe} - Hunt: review Security/System events for remote service execution artifacts (\cmd{psexesvc}), and correlate with unexpected admin logons and lateral movement timing. Cleanup: stop/delete rogue remote services, rotate compromised credentials, and restrict remote admin pathways (SMB/admin shares/firewall).
+  \item \textbf{ADExplorer.exe} - Hunt: run \cmd{.\tools\sysinternals\ADExplorer.exe} and inspect snapshots for newly privileged users/groups, suspicious delegation/SPN changes, and rogue GPO-linked objects. Cleanup: remove unauthorized group memberships/objects, revert malicious attribute changes, and force AD replication checks.
+  \item \textbf{dnsutil.exe} - Hunt: run \cmd{.\tools\sysinternals\dnsutil.exe -t 15} to monitor DNS health and identify repeated failure/abuse conditions during containment. Cleanup: restart affected DNS services, clear poisoned resolver states, and restore known-good server/forwarder settings.
+  \item \textbf{Sysmon64.exe + sysmonconfig.xml} - Hunt: verify sensor status with \cmd{.\tools\sysinternals\Sysmon64.exe -c} and query high-signal events (process create, network connect, image load, WMI, task/service creation) in Event Viewer/SIEM. Cleanup: update config with \cmd{.\tools\sysinternals\Sysmon64.exe -c .\tools\sysinternals\sysmonconfig.xml}, then tune include/exclude rules to reduce noise while preserving malicious behavior visibility.
+\end{enumerate}
+\normalsize
+\end{tcolorbox}
+
+\begin{tcolorbox}[title=Fix DNS (Sysinternals DNSUtil)]
+\begin{itemize}[leftmargin=1.1em, itemsep=1pt, topsep=2pt]
+  \item Verify DNS-related services: \cmd{Get-Service DNS,Dnscache -ErrorAction SilentlyContinue | Select Name,Status,StartType}
+  \item Run DNSUtil watchdog (15s polling): \cmd{.\tools\sysinternals\dnsutil.exe -t 15}
+  \item Restart DNS service once (DNS server role): \cmd{Restart-Service DNS -Force}
+  \item Flush resolver cache (client): \cmd{Clear-DnsClientCache} / \cmd{ipconfig /flushdns}
+  \item Reset NIC DNS to DHCP: \cmd{Set-DnsClientServerAddress -InterfaceAlias "<NIC>" -ResetServerAddresses}
+  \item Set known-good DNS servers: \cmd{Set-DnsClientServerAddress -InterfaceAlias "<NIC>" -ServerAddresses ("1.1.1.1","8.8.8.8")}
+  \item Validate resolution: \cmd{Resolve-DnsName microsoft.com} / \cmd{nslookup microsoft.com}
+\end{itemize}
+\end{tcolorbox}
+
+\begin{tcolorbox}[title=Seatbelt Threat Hunting Queries]
+\begin{itemize}[leftmargin=1.1em, itemsep=1pt, topsep=2pt]
+  \item Persistence mechanisms: \cmd{Seatbelt.exe AutoRuns ScheduledTasks Services WMIEventConsumer WMIEventFilter WMIFilterBinding}
+  \item Credential exposure: \cmd{Seatbelt.exe CloudCredentials WindowsVault CredEnum WindowsCredentialFiles DpapiMasterKeys WindowsAutoLogon KeePass PuttySessions}
+  \item Lateral movement indicators: \cmd{Seatbelt.exe RDPSessions RDPSavedConnections LogonEvents ExplicitLogonEvents NetworkShares MappedDrives}
+  \item Defense evasion awareness: \cmd{Seatbelt.exe WindowsDefender AMSIProviders AppLocker Sysmon PowerShell UAC CredGuard WindowsFirewall}
+  \item Suspicious process/network activity: \cmd{Seatbelt.exe InterestingProcesses Processes TcpConnections UdpConnections NamedPipes}
+  \item Event log mining: \cmd{Seatbelt.exe PowerShellEvents SysmonEvents ProcessCreationEvents "LogonEvents 30" "ExplicitLogonEvents 30"}
+  \item LOLBAS coverage: \cmd{Seatbelt.exe LOLBAS}
+  \item Quick full triage: \cmd{Seatbelt.exe -group=all -full -outputfile="C:\Temp\triage.json"}
+  \item Suggested workflow: run targeted queries first, then run full triage JSON collection for deeper offline analysis or SIEM ingestion.
+\end{itemize}
+\end{tcolorbox}
+
+\end{document}

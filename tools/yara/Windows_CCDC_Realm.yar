@@ -1,0 +1,42 @@
+rule Realm{
+    meta: 
+        author = "RIT CCDC Team"
+        creation_date = "2025-11-13"
+        last_modified = "2025-11-13"
+        arch_context = "x86,x86_64"
+        scan_context = "file, memory"
+        threat_name = "Realm"
+        severity = 100
+        os = "Windows"
+    strings:
+        $a1  = "realm"    
+        $a2  = "implants"                 
+        $a3  = "lib"                     
+        $a4  = "eldritch"  
+        $a5  = "tavern"
+        $a6  = "SetCallbackIntervalMessage"
+        $a7 = "tome"
+        $a8 = "get_payload"
+        $a9 = "imix"
+        $a10 = "cargo"
+        $a11 = "ClaimTask"
+        $a12 = "ReverseShell"
+        $a13 = "grpc"
+        $a14 = "SetCallbackInterval"
+        $a15 = "SetCallbackUri"
+        $a16 = "c2.C2ClaimTasks"
+        $a17 = "myserviceimix"
+        $a18 = "openssh"
+        $a19 = "starlark"
+        $a20 = "IMIX_SERVER_PUBKEY"
+        $a21 = "IMIX_CALLBACK_URI"
+        $a22 = "IMIX_CALLBACK_INTERVAL"
+        $a23 = "IMIX_RETRY_INTERVAL"
+        $a24 = "IMIX_PROXY_URI"
+        $a25 = "IMIX_HOST_ID"
+        $a26 = "IMIX_RUN_ONCE"
+        $a27 = "IMIX_BEACON_ID"
+        $a28 = "IMIX_LOG"
+    condition:
+        12 of ($a*)
+}

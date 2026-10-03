@@ -1,0 +1,71 @@
+{
+ "description": "Pipeline for normalizing decoded Windows Security scheduled task XML.",
+ "processors": [
+  {
+   "script": {
+    "tag": "normalize_decoded_scheduled_task_xml",
+    "description": "Normalize agent-side decode_xml output without parsing raw XML.",
+    "lang": "painless",
+    "params": {
+     "action_types": {
+      "exec": "exec",
+      "comhandler": "com_handler"
+     },
+     "action_keys": [
+      "exec",
+      "comhandler"
+     ],
+     "trigger_types": {
+      "boottrigger": "boot",
+      "wnfstatechangetrigger": "wnf_state_change",
+      "timetrigger": "time",
+      "calendartrigger": "calendar",
+      "logontrigger": "logon",
+      "registrationtrigger": "registration",
+      "sessionstatechangetrigger": "session_state_change",
+      "eventtrigger": "event",
+      "idletrigger": "idle"
+     },
+     "trigger_keys": [
+      "boottrigger",
+      "wnfstatechangetrigger",
+      "timetrigger",
+      "calendartrigger",
+      "logontrigger",
+      "registrationtrigger",
+      "sessionstatechangetrigger",
+      "eventtrigger",
+      "idletrigger"
+     ],
+     "action_definition_keys": [
+      "type",
+      "context",
+      "command",
+      "arguments",
+      "working_directory",
+      "class_id"
+     ],
+     "trigger_definition_keys": [
+      "type",
+      "enabled",
+      "interval",
+      "duration",
+      "stop_at_duration_end"
+     ]
+    },
+    "source": "def asMap(def value) {\n  return value instanceof Map ? value : null;\n}\n\nArrayList asList(def value) {\n  ArrayList values = new ArrayList();\n  if (value == null) {\n    return values;\n  }\n  if (value instanceof List) {\n    for (def item : value) {\n      values.add(item);\n    }\n    return values;\n  }\n  values.add(value);\n  return values;\n}\n\nString text(def value) {\n  if (value == null) {\n    return null;\n  }\n  def raw = value;\n  if (value instanceof Map) {\n    raw = value.get(\"#text\");\n  }\n  if (raw == null) {\n    return null;\n  }\n  String s = raw.toString();\n  return s.length() == 0 ? null : s;\n}\n\ndef boolValue(def value) {\n  String s = text(value);\n  if (s == null) {\n    return null;\n  }\n  String v = s.toLowerCase();\n  if (v.equals(\"true\") || v.equals(\"1\")) {\n    return true;\n  }\n  if (v.equals(\"false\") || v.equals(\"0\")) {\n    return false;\n  }\n  return null;\n}\n\nvoid putText(HashMap target, String field, def source, String key) {\n  if (!(source instanceof Map)) {\n    return;\n  }\n  String value = text(source.get(key));\n  if (value != null) {\n    target.put(field, value);\n  }\n}\n\nvoid putBool(HashMap target, String field, def source, String key) {\n  if (!(source instanceof Map)) {\n    return;\n  }\n  def value = boolValue(source.get(key));\n  if (value != null) {\n    target.put(field, value);\n  }\n}\n\nvoid putBoolDefault(HashMap target, String field, def source, String key, boolean defaultValue) {\n  if (!(source instanceof Map) || !source.containsKey(key)) {\n    target.put(field, defaultValue);\n    return;\n  }\n  def value = boolValue(source.get(key));\n  if (value != null) {\n    target.put(field, value);\n  }\n}\n\nString escapeDefinitionValue(String value) {\n  String hex = \"0123456789ABCDEF\";\n  StringBuilder escaped = new StringBuilder();\n  for (int i = 0; i < value.length(); i++) {\n    int code = value.charAt(i);\n    // Escape %, |, =, C0 control characters, and DEL.\n    if (code == 37 || code == 124 || code == 61 || code < 32 || code == 127) {\n      escaped.append(\"%\");\n      escaped.append(hex.charAt((code >> 4) & 15));\n      escaped.append(hex.charAt(code & 15));\n    } else {\n      escaped.append(value.charAt(i));\n    }\n  }\n  return escaped.toString();\n}\n\nString canonicalDefinition(HashMap values, def keys) {\n  StringBuilder definition = new StringBuilder(\"v=1\");\n  for (def keyValue : keys) {\n    String key = keyValue.toString();\n    definition.append(\"|\");\n    definition.append(key);\n    definition.append(\"=\");\n    if (!values.containsKey(key) || values.get(key) == null) {\n      continue;\n    }\n    definition.append(escapeDefinitionValue(values.get(key).toString()));\n  }\n  return definition.toString();\n}\n\nArrayList normalizePrincipals(def task) {\n  def principalsBlock = asMap(task.get(\"principals\"));\n  if (principalsBlock == null) {\n    return null;\n  }\n\n  ArrayList principals = new ArrayList();\n  for (def principalValue : asList(principalsBlock.get(\"principal\"))) {\n    def principalBlock = asMap(principalValue);\n    if (principalBlock == null) {\n      continue;\n    }\n\n    HashMap principal = new HashMap();\n    putText(principal, \"id\", principalBlock, \"id\");\n\n    String userId = text(principalBlock.get(\"userid\"));\n    if (userId != null) {\n      HashMap user = new HashMap();\n      user.put(\"identifier\", userId);\n      principal.put(\"user\", user);\n    }\n\n    String groupId = text(principalBlock.get(\"groupid\"));\n    if (groupId != null) {\n      HashMap group = new HashMap();\n      group.put(\"identifier\", groupId);\n      principal.put(\"group\", group);\n    }\n\n    String logonType = text(principalBlock.get(\"logontype\"));\n    if (logonType != null) {\n      HashMap logon = new HashMap();\n      logon.put(\"type\", logonType);\n      principal.put(\"logon\", logon);\n    }\n\n    putText(principal, \"run_level\", principalBlock, \"runlevel\");\n    if (principal.size() > 0) {\n      principals.add(principal);\n    }\n  }\n  return principals;\n}\n\nHashMap normalizeSettings(def task) {\n  if (!(task instanceof Map) || !task.containsKey(\"settings\")) {\n    return null;\n  }\n\n  def settingsValue = task.get(\"settings\");\n  def settingsBlock = asMap(settingsValue);\n  if (settingsBlock == null) {\n    // decode_xml represents an empty <Settings /> element as an empty\n    // scalar. Preserve non-empty malformed scalars as unknown.\n    if (text(settingsValue) != null) {\n      return null;\n    }\n    settingsBlock = new HashMap();\n  }\n\n  HashMap settings = new HashMap();\n  // Task Scheduler defaults an omitted Settings/Enabled element to true.\n  putBoolDefault(settings, \"enabled\", settingsBlock, \"enabled\", true);\n  putBool(settings, \"hidden\", settingsBlock, \"hidden\");\n  return settings;\n}\n\nArrayList normalizeTriggers(def task, def triggerKeys, def triggerTypes, def definitionKeys) {\n  def triggersBlock = asMap(task.get(\"triggers\"));\n  if (triggersBlock == null) {\n    return null;\n  }\n\n  ArrayList triggers = new ArrayList();\n  // decode_xml groups child elements by name. Same-name elements remain ordered\n  // lists, but cross-type XML order is not available after agent-side decoding.\n  for (def triggerKey : triggerKeys) {\n    String type = triggerTypes.get(triggerKey);\n    for (def triggerValue : asList(triggersBlock.get(triggerKey))) {\n      def triggerBlock = asMap(triggerValue);\n      // Empty XML trigger elements decode as empty scalar strings. Ignore\n      // non-empty scalars because they cannot represent a valid trigger.\n      if (triggerBlock == null && text(triggerValue) != null) {\n        continue;\n      }\n\n      HashMap trigger = new HashMap();\n      trigger.put(\"type\", type);\n      // Task Scheduler defaults an omitted trigger Enabled element to true.\n      putBoolDefault(trigger, \"enabled\", triggerBlock, \"enabled\", true);\n\n      // decode_xml represents empty elements (for example, <BootTrigger />)\n      // as scalar strings. Their presence still defines a trigger, even when\n      // there are no optional fields to extract from a map.\n      if (triggerBlock != null) {\n        def repetitionBlock = asMap(triggerBlock.get(\"repetition\"));\n        if (repetitionBlock != null) {\n          HashMap repetition = new HashMap();\n          putText(repetition, \"interval\", repetitionBlock, \"interval\");\n          putText(repetition, \"duration\", repetitionBlock, \"duration\");\n          putBool(repetition, \"stop_at_duration_end\", repetitionBlock, \"stopatdurationend\");\n          if (repetition.size() > 0) {\n            trigger.put(\"repetition\", repetition);\n          }\n        }\n      }\n      HashMap definitionValues = new HashMap();\n      definitionValues.put(\"type\", trigger.get(\"type\"));\n      definitionValues.put(\"enabled\", trigger.get(\"enabled\"));\n      def repetition = asMap(trigger.get(\"repetition\"));\n      if (repetition != null) {\n        for (def key : [\"interval\", \"duration\", \"stop_at_duration_end\"]) {\n          if (repetition.containsKey(key)) {\n            definitionValues.put(key, repetition.get(key));\n          }\n        }\n      }\n      trigger.put(\"definition\", canonicalDefinition(definitionValues, definitionKeys));\n      triggers.add(trigger);\n    }\n  }\n  return triggers;\n}\n\nArrayList normalizeActions(def task, def actionKeys, def actionTypes, def definitionKeys) {\n  def actionsBlock = asMap(task.get(\"actions\"));\n  if (actionsBlock == null) {\n    return null;\n  }\n\n  ArrayList actions = new ArrayList();\n  String context = text(actionsBlock.get(\"context\"));\n  // Use a stable type order because decode_xml exposes actions by element name.\n  // Repeated same-name actions are still emitted in their decoded list order.\n  for (def actionKey : actionKeys) {\n    String type = actionTypes.get(actionKey);\n    for (def actionValue : asList(actionsBlock.get(actionKey))) {\n      def actionBlock = asMap(actionValue);\n      if (actionBlock == null) {\n        continue;\n      }\n\n      HashMap action = new HashMap();\n      action.put(\"type\", type);\n      if (context != null) {\n        action.put(\"context\", context);\n      }\n\n      if (type.equals(\"exec\")) {\n        putText(action, \"command\", actionBlock, \"command\");\n        putText(action, \"arguments\", actionBlock, \"arguments\");\n        putText(action, \"working_directory\", actionBlock, \"workingdirectory\");\n      } else if (type.equals(\"com_handler\")) {\n        putText(action, \"class_id\", actionBlock, \"classid\");\n      }\n      action.put(\"definition\", canonicalDefinition(action, definitionKeys));\n      actions.add(action);\n    }\n  }\n  return actions;\n}\n\nif (ctx.event == null || ctx.winlog == null || !(ctx.winlog._tmp?.scheduled_task instanceof Map)) {\n  return;\n}\n\nString code = ctx.event.code == null ? null : ctx.event.code.toString();\nif (code == null || ![\"4698\", \"4699\", \"4700\", \"4701\", \"4702\"].contains(code)) {\n  return;\n}\n\ndef tmp = ctx.winlog._tmp.scheduled_task;\ndef decoded = code.equals(\"4702\") ? tmp.task_content_new : tmp.task_content;\ndef decodedMap = asMap(decoded);\nif (decodedMap == null) {\n  return;\n}\n\n// decode_xml lowercases names and uses local element/attribute names.\ndef task = asMap(decodedMap.get(\"task\"));\nif (task == null) {\n  task = decodedMap;\n}\n\nHashMap normalized = new HashMap();\n\ndef registrationInfo = asMap(task.get(\"registrationinfo\"));\nputText(normalized, \"uri\", registrationInfo, \"uri\");\n\nArrayList principals = normalizePrincipals(task);\nif (principals != null && principals.size() > 0) {\n  normalized.put(\"principals\", principals);\n}\n\nHashMap settings = normalizeSettings(task);\nif (settings != null && settings.size() > 0) {\n  normalized.put(\"settings\", settings);\n}\n\nArrayList triggers = normalizeTriggers(\n  task,\n  params.trigger_keys,\n  params.trigger_types,\n  params.trigger_definition_keys\n);\nif (triggers != null && triggers.size() > 0) {\n  normalized.put(\"triggers\", triggers);\n}\n\nArrayList actions = normalizeActions(\n  task,\n  params.action_keys,\n  params.action_types,\n  params.action_definition_keys\n);\nif (actions != null && actions.size() > 0) {\n  normalized.put(\"actions\", actions);\n}\n\n// Publish only after every section has normalized successfully.\nif (normalized.size() > 0) {\n  ctx.winlog.scheduled_task = normalized;\n}\n",
+    "on_failure": [
+     {
+      "append": {
+       "description": "Mark events when scheduled task normalization fails unexpectedly.",
+       "field": "tags",
+       "value": "scheduled_task_normalization_failed",
+       "allow_duplicates": false,
+       "ignore_failure": true
+      }
+     }
+    ]
+   }
+  }
+ ]
+}

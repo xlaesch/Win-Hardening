@@ -1,0 +1,347 @@
+<!--
+  Sysmon Configuration for CCDC Competition Environments
+  Based on SwiftOnSecurity/sysmon-config (community standard)
+  
+  Purpose: High-fidelity endpoint telemetry for threat detection.
+  Covers: Process creation, network connections, file creation,
+          registry modification, image loads, pipes, WMI, DNS queries.
+  
+  Noise filtering: Excludes known-good Windows/system processes to
+  reduce log volume while catching attacker activity.
+-->
+
+<Sysmon schemaversion="4.90">
+  <!-- Capture all hashes for forensics -->
+  <HashAlgorithms>md5,sha256,IMPHASH</HashAlgorithms>
+
+  <CheckRevocation/>
+
+  <EventFiltering>
+
+    <!--
+    ================================================================
+      Event ID 1: Process Creation
+      Log all process creation except known noisy/safe OS processes.
+    ================================================================
+    -->
+    <RuleGroup name="ProcessCreate" groupRelation="or">
+      <ProcessCreate onmatch="exclude">
+        <!-- Windows noise reduction -->
+        <Image condition="is">C:\Windows\System32\backgroundTaskHost.exe</Image>
+        <Image condition="is">C:\Windows\System32\SearchProtocolHost.exe</Image>
+        <Image condition="is">C:\Windows\System32\SearchFilterHost.exe</Image>
+        <Image condition="is">C:\Windows\System32\SearchIndexer.exe</Image>
+        <Image condition="is">C:\Windows\System32\audiodg.exe</Image>
+        <Image condition="is">C:\Windows\System32\conhost.exe</Image>
+        <Image condition="is">C:\Windows\System32\musNotification.exe</Image>
+        <Image condition="is">C:\Windows\System32\musNotificationUx.exe</Image>
+        <Image condition="is">C:\Windows\System32\RuntimeBroker.exe</Image>
+        <Image condition="is">C:\Windows\System32\smartscreen.exe</Image>
+        <Image condition="is">C:\Windows\SystemApps\Microsoft.Windows.Cortana_cw5n1h2txyewy\SearchUI.exe</Image>
+        <Image condition="is">C:\Windows\System32\SppExtComObj.Exe</Image>
+        <ParentImage condition="is">C:\Windows\System32\SrTasks.exe</ParentImage>
+      </ProcessCreate>
+    </RuleGroup>
+
+    <!--
+    ================================================================
+      Event ID 2: File Creation Time Changed (Timestomping)
+      Monitor all — this is a strong indicator of attacker activity.
+    ================================================================
+    -->
+    <RuleGroup name="FileCreateTime" groupRelation="or">
+      <FileCreateTime onmatch="exclude">
+        <Image condition="is">C:\Windows\System32\msiexec.exe</Image>
+        <Image condition="end with">setup.exe</Image>
+      </FileCreateTime>
+    </RuleGroup>
+
+    <!--
+    ================================================================
+      Event ID 3: Network Connection
+      Monitor outbound connections; exclude noisy system processes.
+    ================================================================
+    -->
+    <RuleGroup name="NetworkConnect" groupRelation="or">
+      <NetworkConnect onmatch="exclude">
+        <Image condition="is">C:\Windows\System32\svchost.exe</Image>
+        <Image condition="is">C:\Program Files\Windows Defender\MsMpEng.exe</Image>
+        <Image condition="is">C:\Windows\System32\wbem\WmiPrvSE.exe</Image>
+        <Image condition="is">C:\Windows\SystemApps\Microsoft.Windows.Cortana_cw5n1h2txyewy\SearchUI.exe</Image>
+        <DestinationPort condition="is">137</DestinationPort>
+        <DestinationPort condition="is">138</DestinationPort>
+      </NetworkConnect>
+    </RuleGroup>
+
+    <!--
+    ================================================================
+      Event ID 5: Process Terminated
+      Log all process terminations — useful for correlating with E1.
+    ================================================================
+    -->
+    <RuleGroup name="ProcessTerminate" groupRelation="or">
+      <ProcessTerminate onmatch="include">
+        <!-- Log all terminations -->
+      </ProcessTerminate>
+    </RuleGroup>
+
+    <!--
+    ================================================================
+      Event ID 6: Driver Loaded
+      Monitor all driver loads — detects rootkits and vulnerable drivers.
+    ================================================================
+    -->
+    <RuleGroup name="DriverLoad" groupRelation="or">
+      <DriverLoad onmatch="exclude">
+        <Signature condition="contains">Microsoft</Signature>
+        <Signature condition="contains">Windows</Signature>
+      </DriverLoad>
+    </RuleGroup>
+
+    <!--
+    ================================================================
+      Event ID 7: Image Loaded (DLL)
+      Monitor DLL loads from suspicious locations.
+    ================================================================
+    -->
+    <RuleGroup name="ImageLoad" groupRelation="or">
+      <ImageLoad onmatch="include">
+        <!-- DLLs loaded from temp/user folders — DLL sideloading -->
+        <ImageLoaded condition="begin with">C:\Users</ImageLoaded>
+        <ImageLoaded condition="begin with">C:\Temp</ImageLoaded>
+        <ImageLoaded condition="begin with">C:\Windows\Temp</ImageLoaded>
+        <ImageLoaded condition="begin with">C:\ProgramData</ImageLoaded>
+        <!-- Unsigned DLLs loaded into system processes -->
+        <Signed condition="is">false</Signed>
+      </ImageLoad>
+    </RuleGroup>
+
+    <!--
+    ================================================================
+      Event ID 8: CreateRemoteThread
+      Log all — strong indicator of process injection.
+    ================================================================
+    -->
+    <RuleGroup name="CreateRemoteThread" groupRelation="or">
+      <CreateRemoteThread onmatch="exclude">
+        <!-- Exclude known-good sources -->
+        <SourceImage condition="is">C:\Windows\System32\csrss.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\wininit.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\lsass.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\services.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\winlogon.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\svchost.exe</SourceImage>
+      </CreateRemoteThread>
+    </RuleGroup>
+
+    <!--
+    ================================================================
+      Event ID 9: RawAccessRead
+      Detect direct disk reads (credential dumping, MBR access).
+    ================================================================
+    -->
+    <RuleGroup name="RawAccessRead" groupRelation="or">
+      <RawAccessRead onmatch="exclude">
+        <Image condition="is">C:\Windows\System32\svchost.exe</Image>
+        <Image condition="is">C:\Windows\System32\vds.exe</Image>
+        <Image condition="is">C:\Windows\System32\vssvc.exe</Image>
+      </RawAccessRead>
+    </RuleGroup>
+
+    <!--
+    ================================================================
+      Event ID 10: ProcessAccess
+      Monitor access to sensitive processes (LSASS, etc.).
+    ================================================================
+    -->
+    <RuleGroup name="ProcessAccess" groupRelation="or">
+      <ProcessAccess onmatch="include">
+        <!-- LSASS access — credential dumping (Mimikatz, etc.) -->
+        <TargetImage condition="is">C:\Windows\System32\lsass.exe</TargetImage>
+        <!-- Winlogon access -->
+        <TargetImage condition="is">C:\Windows\System32\winlogon.exe</TargetImage>
+        <!-- CSRSS access -->
+        <TargetImage condition="is">C:\Windows\System32\csrss.exe</TargetImage>
+      </ProcessAccess>
+    </RuleGroup>
+
+    <!--
+    ================================================================
+      Event ID 11: FileCreate
+      Monitor file creation in suspicious/startup locations.
+    ================================================================
+    -->
+    <RuleGroup name="FileCreate" groupRelation="or">
+      <FileCreate onmatch="include">
+        <!-- Startup persistence -->
+        <TargetFilename condition="contains">\Start Menu\Programs\Startup\</TargetFilename>
+        <TargetFilename condition="contains">\Startup\</TargetFilename>
+        <!-- Executables/scripts in temp -->
+        <TargetFilename condition="end with">.exe</TargetFilename>
+        <TargetFilename condition="end with">.dll</TargetFilename>
+        <TargetFilename condition="end with">.bat</TargetFilename>
+        <TargetFilename condition="end with">.cmd</TargetFilename>
+        <TargetFilename condition="end with">.ps1</TargetFilename>
+        <TargetFilename condition="end with">.vbs</TargetFilename>
+        <TargetFilename condition="end with">.js</TargetFilename>
+        <TargetFilename condition="end with">.hta</TargetFilename>
+        <TargetFilename condition="end with">.scr</TargetFilename>
+        <TargetFilename condition="end with">.lnk</TargetFilename>
+        <!-- Web shells in common web server directories -->
+        <TargetFilename condition="contains">\inetpub\</TargetFilename>
+        <TargetFilename condition="contains">\wwwroot\</TargetFilename>
+        <TargetFilename condition="end with">.aspx</TargetFilename>
+        <TargetFilename condition="end with">.asp</TargetFilename>
+        <TargetFilename condition="end with">.php</TargetFilename>
+        <TargetFilename condition="end with">.jsp</TargetFilename>
+        <!-- Task/scheduled job files -->
+        <TargetFilename condition="contains">\Windows\System32\Tasks\</TargetFilename>
+      </FileCreate>
+    </RuleGroup>
+
+    <!--
+    ================================================================
+      Event ID 12,13,14: Registry Events
+      Monitor persistence and defense-evasion registry keys.
+    ================================================================
+    -->
+    <RuleGroup name="RegistryEvent" groupRelation="or">
+      <RegistryEvent onmatch="include">
+        <!-- Run keys — classic persistence -->
+        <TargetObject condition="contains">\CurrentVersion\Run</TargetObject>
+        <TargetObject condition="contains">\CurrentVersion\RunOnce</TargetObject>
+        <!-- Services -->
+        <TargetObject condition="contains">\Services\</TargetObject>
+        <!-- Image File Execution Options — debugger injection -->
+        <TargetObject condition="contains">\Image File Execution Options\</TargetObject>
+        <!-- AppInit DLLs -->
+        <TargetObject condition="contains">\Windows\CurrentVersion\Windows\AppInit_DLLs</TargetObject>
+        <!-- Winlogon -->
+        <TargetObject condition="contains">\Microsoft\Windows NT\CurrentVersion\Winlogon</TargetObject>
+        <!-- LSA -->
+        <TargetObject condition="contains">\CurrentControlSet\Control\Lsa</TargetObject>
+        <!-- Security providers -->
+        <TargetObject condition="contains">\CurrentControlSet\Control\SecurityProviders</TargetObject>
+        <!-- Defender tampering -->
+        <TargetObject condition="contains">\Windows Defender\</TargetObject>
+        <!-- COM objects hijack -->
+        <TargetObject condition="contains">\InprocServer32\(Default)</TargetObject>
+        <!-- ScreenSaver persistence -->
+        <TargetObject condition="contains">\Control Panel\Desktop\SCRNSAVE.EXE</TargetObject>
+      </RegistryEvent>
+    </RuleGroup>
+
+    <!--
+    ================================================================
+      Event ID 15: FileCreateStreamHash
+      Detect Alternate Data Streams (ADS) — used to hide payloads.
+    ================================================================
+    -->
+    <RuleGroup name="FileCreateStreamHash" groupRelation="or">
+      <FileCreateStreamHash onmatch="exclude">
+        <TargetFilename condition="end with">.partial</TargetFilename>
+        <TargetFilename condition="contains">AppData\Local\Microsoft\Edge</TargetFilename>
+        <TargetFilename condition="contains">AppData\Local\Google\Chrome</TargetFilename>
+      </FileCreateStreamHash>
+    </RuleGroup>
+
+    <!--
+    ================================================================
+      Event ID 17,18: Pipe Events (Created / Connected)
+      Monitor named pipes — used for C2, lateral movement, and Cobalt Strike.
+    ================================================================
+    -->
+    <RuleGroup name="PipeEvent" groupRelation="or">
+      <PipeEvent onmatch="include">
+        <!-- Known malicious pipe names -->
+        <PipeName condition="contains">msagent_</PipeName>
+        <PipeName condition="contains">MSSE-</PipeName>
+        <PipeName condition="contains">postex_</PipeName>
+        <PipeName condition="contains">status_</PipeName>
+        <PipeName condition="contains">mojo.</PipeName>
+        <PipeName condition="contains">interprocess.</PipeName>
+        <!-- PsExec pipes -->
+        <PipeName condition="is">\psexesvc</PipeName>
+        <PipeName condition="is">\PSEXESVC</PipeName>
+        <!-- Cobalt Strike default pipes -->
+        <PipeName condition="begin with">\msagent_</PipeName>
+        <PipeName condition="begin with">\MSSE-</PipeName>
+        <PipeName condition="begin with">\postex_</PipeName>
+      </PipeEvent>
+    </RuleGroup>
+
+    <!--
+    ================================================================
+      Event ID 19,20,21: WMI Events
+      Monitor all WMI persistence — consumers, filters, bindings.
+    ================================================================
+    -->
+    <RuleGroup name="WmiEvent" groupRelation="or">
+      <WmiEvent onmatch="include">
+        <!-- Log all WMI event activity — relatively low volume, high value -->
+      </WmiEvent>
+    </RuleGroup>
+
+    <!--
+    ================================================================
+      Event ID 22: DNS Query
+      Monitor DNS queries from non-standard processes.
+    ================================================================
+    -->
+    <RuleGroup name="DnsQuery" groupRelation="or">
+      <DnsQuery onmatch="exclude">
+        <Image condition="is">C:\Windows\System32\svchost.exe</Image>
+        <Image condition="is">C:\Windows\System32\msiexec.exe</Image>
+        <QueryName condition="end with">.microsoft.com</QueryName>
+        <QueryName condition="end with">.windowsupdate.com</QueryName>
+        <QueryName condition="end with">.windows.com</QueryName>
+        <QueryName condition="end with">.bing.com</QueryName>
+      </DnsQuery>
+    </RuleGroup>
+
+    <!--
+    ================================================================
+      Event ID 23: FileDelete (with archive)
+      Capture deleted executables and scripts for forensics.
+    ================================================================
+    -->
+    <RuleGroup name="FileDelete" groupRelation="or">
+      <FileDelete onmatch="include">
+        <TargetFilename condition="end with">.exe</TargetFilename>
+        <TargetFilename condition="end with">.dll</TargetFilename>
+        <TargetFilename condition="end with">.ps1</TargetFilename>
+        <TargetFilename condition="end with">.bat</TargetFilename>
+        <TargetFilename condition="end with">.cmd</TargetFilename>
+        <TargetFilename condition="end with">.vbs</TargetFilename>
+        <TargetFilename condition="end with">.js</TargetFilename>
+      </FileDelete>
+    </RuleGroup>
+
+    <!--
+    ================================================================
+      Event ID 25: ProcessTampering
+      Detect process hollowing and herpaderping.
+    ================================================================
+    -->
+    <RuleGroup name="ProcessTampering" groupRelation="or">
+      <ProcessTampering onmatch="exclude">
+        <!-- Log all process tampering events -->
+      </ProcessTampering>
+    </RuleGroup>
+
+    <!--
+    ================================================================
+      Event ID 26: FileDeleteDetected
+      Log detected file deletions (non-archiving variant).
+    ================================================================
+    -->
+    <RuleGroup name="FileDeleteDetected" groupRelation="or">
+      <FileDeleteDetected onmatch="include">
+        <TargetFilename condition="end with">.exe</TargetFilename>
+        <TargetFilename condition="end with">.dll</TargetFilename>
+        <TargetFilename condition="end with">.sys</TargetFilename>
+      </FileDeleteDetected>
+    </RuleGroup>
+
+  </EventFiltering>
+</Sysmon>

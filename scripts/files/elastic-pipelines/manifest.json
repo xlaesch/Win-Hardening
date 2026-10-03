@@ -1,0 +1,93 @@
+{
+ "pipelines": [
+  "logs-system.security-default",
+  "logs-system.security-security_scheduled_task",
+  "logs-system.security-security_standard",
+  "logs-windows.powershell-default",
+  "logs-windows.powershell_operational-default",
+  "logs-windows.sysmon_operational-default",
+  "logs-windows.defender-default"
+ ],
+ "templates": [
+  {
+   "name": "logs-system.security",
+   "body": {
+    "index_patterns": [
+     "logs-system.security-*",
+     ".ds-logs-system.security-*"
+    ],
+    "data_stream": {},
+    "priority": 500,
+    "template": {
+     "settings": {
+      "index.default_pipeline": "logs-system.security-default"
+     }
+    }
+   }
+  },
+  {
+   "name": "logs-windows.powershell",
+   "body": {
+    "index_patterns": [
+     "logs-windows.powershell-*",
+     ".ds-logs-windows.powershell-*"
+    ],
+    "data_stream": {},
+    "priority": 500,
+    "template": {
+     "settings": {
+      "index.default_pipeline": "logs-windows.powershell-default"
+     }
+    }
+   }
+  },
+  {
+   "name": "logs-windows.powershell_operational",
+   "body": {
+    "index_patterns": [
+     "logs-windows.powershell_operational-*",
+     ".ds-logs-windows.powershell_operational-*"
+    ],
+    "data_stream": {},
+    "priority": 500,
+    "template": {
+     "settings": {
+      "index.default_pipeline": "logs-windows.powershell_operational-default"
+     }
+    }
+   }
+  },
+  {
+   "name": "logs-windows.sysmon_operational",
+   "body": {
+    "index_patterns": [
+     "logs-windows.sysmon_operational-*",
+     ".ds-logs-windows.sysmon_operational-*"
+    ],
+    "data_stream": {},
+    "priority": 500,
+    "template": {
+     "settings": {
+      "index.default_pipeline": "logs-windows.sysmon_operational-default"
+     }
+    }
+   }
+  },
+  {
+   "name": "logs-windows.defender",
+   "body": {
+    "index_patterns": [
+     "logs-windows.defender-*",
+     ".ds-logs-windows.defender-*"
+    ],
+    "data_stream": {},
+    "priority": 500,
+    "template": {
+     "settings": {
+      "index.default_pipeline": "logs-windows.defender-default"
+     }
+    }
+   }
+  }
+ ]
+}

@@ -1,0 +1,8 @@
+{
+    "FleetUrl": "http://YOUR-FLEET-SERVER:8220",
+    "EnrollmentToken": "CHANGE-ME",
+    "ElasticUrl": "http://YOUR-ES-SERVER:9200",
+    "Username": "elastic",
+    "Password": "CHANGE-ME",
+    "ApiKey": ""
+}
